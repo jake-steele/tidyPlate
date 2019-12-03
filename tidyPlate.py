@@ -1,18 +1,8 @@
-# Goals for project:
-# 1.0 Input xlsx: two separate 8x12 tables (one layout, one raw data)
-# 1.1 Row and Col headers, same sheet
-# 1.2 Table of standard concentrations and units
-# 2.0 Link layout label for each well to raw data reading
-# 3.0 Average raw data of wells labeled 'BLANK' (More than one BLANK?)
-# 3.1 Use BLANK avg to generate -BLANK values for each well
-# 4.0 Generate and optimize Linear/5PL Std curve
-# 5.0 Insert Std Curve graph as image in xlsx
-# https://stackoverflow.com/questions/30716911/writing-pandas-matplotlib-image-directly-into-xlsx-file
-# 6.0 Calc ind. and avg. values for each sample
-# 6.1 Insert new graph containing calculated values and statistics
-
 #!/usr/bin/env python
 # coding: utf-8
+
+# # Test Notebook
+# ### Just wanted a notebook to mess around in.
 
 # In[1]:
 
@@ -20,44 +10,21 @@
 import numpy as np
 import pandas as pd
 
-
-# In[2]:
-
-
 excel_file = "C:/Users/Jake/Documents/Programming/tidyPlate/sampleData.xlsx"
 layout_df = pd.read_excel(excel_file, sheet_name='Input', index_col=0, nrows=8)
 layout_df.index.names = [None]
-layout_df
-
-
-# In[3]:
-
-
 raw_df = pd.read_excel(excel_file, sheet_name='Input', index_col=0, skiprows=11, nrows=8)
 raw_df.index.names = [None]
+layout_df
 raw_df
-
-
-# In[4]:
-
 
 combined_df = pd.DataFrame({
     'row': pd.Series(['A','B','C','D','E','F','G','H']).repeat(12),
     'col': pd.np.tile(np.array(np.arange(1,13)),8)},
     columns=['row','col'])
-combined_df
-
-
-# In[5]:
-
 
 combined_df['well'] = combined_df['row'] + combined_df['col'].map(str)
 combined_df.reset_index(drop=True,inplace=True)
-combined_df
-
-
-# In[6]:
-
 
 labels_ser = [''] * 96
 raw_ser = [0] * 96
@@ -66,25 +33,10 @@ for index, row in combined_df.iterrows():
     raw_ser[index] = raw_df[row['col']][row['row']]
 combined_df['label'] = labels_ser
 combined_df['raw'] = raw_ser
-combined_df
-
-
-# In[7]:
-
+# Combined dataframe containing each well along with its corresponding label and raw data
 
 STD_BLANK = combined_df.loc[combined_df['label'] == 'STD BLANK']['raw'].mean()
-STD_BLANK
-
-
-# In[8]:
-
-
 SAMP_BLANK = combined_df.loc[combined_df['label'] == 'BLANK']['raw'].mean()
-SAMP_BLANK
-
-
-# In[9]:
-
 
 minBlk_ser = [0] * 96
 for index, row in combined_df.iterrows():
@@ -96,20 +48,18 @@ for index, row in combined_df.iterrows():
     else:
         minBlk_ser[index] = row['raw'] - SAMP_BLANK
 combined_df['minusBlank'] = minBlk_ser
+# Added 'minusBlank' values to combined_df dataframe
 combined_df
 
 
-# In[10]:
+# In[2]:
 
 
+# Read in user-input preferences for Std Curve from the xlsx
 user_std_options = pd.read_excel(excel_file, sheet_name='Input', index_col=0, skiprows=22, nrows=4, usecols=[0,1])
 user_std_options.index.names = [None]
-user_std_options
 
-
-# In[11]:
-
-
+# Generate a dataframe to contain Std Curve information
 std_df = pd.DataFrame()
 if user_std_options['userPref']['Serial Diluted (y/n)?'] == 'y':
     std_df = pd.read_excel(excel_file, sheet_name='Input', index_col=1, skiprows=28,
@@ -119,92 +69,114 @@ else:
     std_df = pd.read_excel(excel_file, sheet_name='Input', index_col=1, skiprows=46,
                            nrows=user_std_options['userPref']['# of Concentrations:'],
                           usecols=[0,1,2])
-std_df
-
-
-# In[12]:
-
 
 std_rep_dict = { }
 for name, row in std_df.iterrows():
     if name not in std_rep_dict.keys():
         std_rep_dict[name] = []
-std_rep_dict
-
-
-# In[13]:
-
 
 for index, row in combined_df.iterrows():
     if row['label'] in std_rep_dict.keys():
         std_rep_dict[row['label']].append(row['minusBlank'])
-std_rep_dict
-
-
-# In[14]:
-
 
 std_rep_df = pd.DataFrame.from_dict(std_rep_dict, orient='index')
-std_rep_df
-
-
-# In[15]:
-
 
 STD_REPS = 0
 for key in std_rep_dict.keys():
     if len(std_rep_dict[key]) > STD_REPS:
         STD_REPS = len(std_rep_dict[key])
-STD_REPS
-
-
-# In[16]:
-
 
 col_rep_names = []
 for c in range(STD_REPS):
     col_rep_names.append('Rep' + str(c + 1))
 std_rep_df.columns = col_rep_names
-std_rep_df
-
-
-# In[17]:
-
 
 std_df = pd.concat([std_df, std_rep_df], axis=1)
-std_df
 
-
-# In[18]:
-
-
+# Fetch list of col names representing Std Curve replicates
 std_df_rep_cols = [col for col in std_df.columns if 'Rep' in col]
-std_df_rep_cols
 
 
-# In[19]:
+# In[3]:
 
 
+# Generate columns for mean, std deviation, and coefficient of variation
 std_df['avg'] = std_df.loc[:,std_df_rep_cols].mean(axis=1)
-std_df
-
-
-# In[20]:
-
-
 std_df['sd'] = std_df.loc[:,std_df_rep_cols].std(axis=1)
-std_df
-
-
-# In[21]:
-
-
 std_df['cv'] = std_df.loc[:,'sd'] / std_df.loc[:,'avg']
 std_df
+
+
+# In[4]:
+
+
+import matplotlib.pyplot as plt
+from scipy.optimize import least_squares
+
+def logistic5(x, A, B, C, D, E):
+    """5PL logistic equation"""
+    return D + ((A-D)/(np.power((1 + np.power((x / C), B)), E)))
+
+def residuals(p, y, x):
+    """Deviations of data from fitted 5PL Curve"""
+    A, B, C, D, E = p
+    err = y - logistic5(x, A, B, C, D, E)
+    return err
+
+def peval(x, p):
+    """Evaluated value at x with current parameters"""
+    A, B, C, D, E = p
+    return logistic5(x, A, B, C, D, E)
+
+x = []
+y_meas = []
+for ind, row in std_df.iterrows():
+    for rep in std_df_rep_cols:
+        if not pd.isnull(row[rep]):
+            x.append(row['conc'])
+            y_meas.append(row[rep])
+
+x = np.asarray(x)
+y_meas = np.asarray(y_meas)
+            
+print(len(x))
+print(len(y_meas))
+
+print(x)
+print(y_meas)
+
+
+# In[5]:
+
+
+# A, B, C, D, E = 0.5, 2.5, 8, 7.3, 1
+A = np.amax([np.amin(minBlk_ser)] + [0]) # Min asymptote
+D = np.amax(y_meas) # Max asymptote
+B = (D - A) / np.amax(x) # Steepness
+C = np.amax(x) / 2 # Inflection Point, conc at which y = (D - A) / 2
+E = 1 # Asymmetry factor
+print(A, B, C, D, E)
+
+
+# In[6]:
+
+
+# Initial guess for parameters
+p0 = [A, B, C, D, E]
+y_true = logistic5(x, A, B, C, D, E)
+
+# Fit equation using least squares optimization
+plsq = least_squares(fun = residuals, jac = 'cs', x0 = p0, bounds = (0.0001, 100000), args=(y_meas, x))
 
 
 # In[ ]:
 
 
-
+# Plot results
+plt.plot(x, peval(x, plsq[0]), x, y_meas, 'o', x, y_true)
+plt.title('Least-squares 5PL fit to Std Curve')
+plt.legend(['Fit', 'Measured', 'True'], loc='upper left')
+for i, (param, actual, est) in enumerate(zip('ABCDE', [A,B,C,D,E], plsq[0])):
+    plt.text(10, 3-i*0.5, '%s = %.2f, est(%s) = %.2f' % (param, actual, param, est))
+# plt.savefig('logistic.png')
 
