@@ -9,8 +9,6 @@ raw_df = pd.read_excel(
     excel_file, sheet_name="Input", index_col=0, skiprows=11, nrows=8
 )
 raw_df.index.names = [None]
-layout_df
-raw_df
 
 combined_df = pd.DataFrame(
     {
@@ -47,8 +45,6 @@ for index, row in combined_df.iterrows():
 combined_df["minusBlank"] = minBlk_ser
 # Added 'minusBlank' values to combined_df dataframe
 
-combined_df
-# In[2]:
 # Read in user-input preferences for Std Curve from the xlsx
 user_std_options = pd.read_excel(
     excel_file, sheet_name="Input", index_col=0, skiprows=22, nrows=4, usecols=[0, 1]
@@ -103,32 +99,31 @@ std_df = pd.concat([std_df, std_rep_df], axis=1)
 std_df_rep_cols = [col for col in std_df.columns if "Rep" in col]
 
 
-# In[3]:
-
-
 # Generate columns for mean, std deviation, and coefficient of variation
 std_df["avg"] = std_df.loc[:, std_df_rep_cols].mean(axis=1)
 std_df["sd"] = std_df.loc[:, std_df_rep_cols].std(axis=1)
 std_df["cv"] = std_df.loc[:, "sd"] / std_df.loc[:, "avg"]
+print("std_df")
 std_df
 
 
-# In[4]:
+# In[2]:
 
 
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from scipy.optimize import leastsq
 
 
 def logistic5(x, A, B, C, D, E):
     """5PL logistic equation"""
-    return D + ((A - D) / (np.power((1 + np.power((x / C), B)), E)))
+    return D + ((A - D) / (np.float_power((1 + (np.float_power((x / C), B))), E)))
 
 
 def residuals(p, y, x):
     """Deviations of data from fitted 5PL Curve"""
-    A, B, C, D, E = p
-    err = y - logistic5(x, A, B, C, D, E)
+    A, B, C, D, E = p  # p is array values for each coefficient
+    err = y - logistic5(x, A, B, C, D, E)  # Array of residuals: measured y - calculated
     return err
 
 
@@ -149,14 +144,10 @@ for ind, row in std_df.iterrows():
 x = np.asarray(x)
 y_meas = np.asarray(y_meas)
 
-print(len(x))
-print(len(y_meas))
-
+print("x")
 print(x)
+print("y")
 print(y_meas)
-
-
-# In[5]:
 
 
 # A, B, C, D, E = 0.5, 2.5, 8, 7.3, 1
@@ -168,21 +159,20 @@ E = 1  # Asymmetry factor
 print(A, B, C, D, E)
 
 
-# In[6]:
+# In[3]:
 
 
 # Initial guess for parameters
 p0 = [A, B, C, D, E]
-y_true = logistic5(x, A, B, C, D, E)
+
 
 # Fit equation using least squares optimization
-plsq = least_squares(
-    fun=residuals, jac="cs", x0=p0, bounds=(0.0001, 100000), args=(y_meas, x)
-)
+plsq = leastsq(func=residuals, x0=p0, args=(y_meas, x))
 
 
-# In[ ]:
+# In[4]:
 
+y_true = logistic5(x, A, B, C, D, E)
 
 # Plot results
 plt.plot(x, peval(x, plsq[0]), x, y_meas, "o", x, y_true)
@@ -192,3 +182,5 @@ for i, (param, actual, est) in enumerate(zip("ABCDE", [A, B, C, D, E], plsq[0]))
     plt.text(10, 3 - i * 0.5, "%s = %.2f, est(%s) = %.2f" % (param, actual, param, est))
 # plt.savefig('logistic.png')
 
+
+# %%
